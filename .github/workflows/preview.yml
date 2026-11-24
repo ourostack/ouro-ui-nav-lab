@@ -11,14 +11,17 @@ on:
         description: "full: build, publish and check. panels: only photograph and check the panels already published."
         default: full
         type: choice
-        options: [full, panels]
+        options: [full, panels, before]
+      before_ref:
+        description: "before: the ouro-ui commit to build and check locally, for before-and-after photographs."
+        default: ""
       prefix:
         description: The name the panel photographs start with.
         default: after
 permissions:
   contents: read
 concurrency:
-  group: preview
+  group: preview-${{ inputs.mode }}
   cancel-in-progress: true
 env:
   BASE: /ouro-ui-nav-lab/
@@ -122,3 +125,51 @@ jobs:
             .tmp/nav-check
             .tmp/nav-panels
             .tmp/nav-morph
+  before:
+    # Builds an earlier commit and serves it on this runner, so its panels can be photographed and checked without
+    # publishing it over the preview people are trying.
+    if: inputs.mode == 'before'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ourostack/ouro-ui
+          ref: ${{ inputs.before_ref }}
+          path: old
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ourostack/ouro-ui
+          ref: ${{ inputs.ref }}
+          path: new
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: new/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Build the earlier commit
+        working-directory: old
+        run: |
+          pnpm install --frozen-lockfile
+          mkdir -p site/nav-lab/public/fonts site/nav-lab/public/brand
+          cp site/public/fonts/*.woff2 site/nav-lab/public/fonts/
+          cp site/public/brand/ouro-hx-render*.webp site/nav-lab/public/brand/
+          NAV_LAB_BASE=$BASE pnpm exec vite build --config site/nav-lab/vite.config.ts
+          mkdir -p /tmp/www && cp -r .tmp/nav-lab /tmp/www/ouro-ui-nav-lab
+      - name: Photograph and check its panels
+        working-directory: new
+        continue-on-error: true
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          (cd /tmp/www && python3 -m http.server 4173 >/dev/null 2>&1 &)
+          sleep 2
+          node site/nav-lab/panels.mjs "http://localhost:4173/ouro-ui-nav-lab/" .tmp/nav-panels before | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: nav-lab-before
+          path: new/.tmp/nav-panels
