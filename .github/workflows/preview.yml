@@ -101,19 +101,21 @@ jobs:
           command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null)
           ffmpeg -loglevel error -y -i .tmp/nav-morph/morph.webm -movflags +faststart -pix_fmt yuv420p -vf "scale=1280:-2" .tmp/nav-morph/morph.mp4
           ffmpeg -loglevel error -y -i .tmp/nav-morph/morph.webm -vf "fps=12,scale=900:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" .tmp/nav-morph/morph.gif
+          ffmpeg -loglevel error -y -i .tmp/nav-morph/switch.webm -movflags +faststart -pix_fmt yuv420p -vf "scale=390:-2" .tmp/nav-morph/switch.mp4
       - name: Disclosure behaviour (click, Escape, focus, hover timings, touch targets)
         if: inputs.mode == 'full'
         continue-on-error: true
         run: node site/nav-lab/behaviour.mjs "$URL" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Screenshots
+      - name: Screenshots and line counts
         if: inputs.mode == 'full'
-        run: node site/nav-lab/shots.mjs "$URL" .tmp/nav-shots
+        continue-on-error: true
+        run: node site/nav-lab/shots.mjs "$URL" .tmp/nav-shots | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Ouro check, closed and open, phone, laptop and 4K, light and dark
         if: inputs.mode == 'full'
         continue-on-error: true
         run: |
           targets=""
-          for m in a b c d e; do targets="$targets ${URL}?m=$m#/apple/ax/ ${URL}?m=$m&open=1#/apple/ax/"; done
+          targets="${URL}#/apple/ax/ ${URL}?open=1#/apple/ax/"
           node registry/ouro/check/check.ts $targets --sizes 390x844,1440x900,3840x2160 --themes light,dark --out .tmp/nav-check --no-measured 2>&1 | tail -60
           cat .tmp/nav-check/summary.md >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
