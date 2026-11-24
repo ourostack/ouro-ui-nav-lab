@@ -90,8 +90,8 @@ jobs:
       - name: Panels at every size from 320px to 4K (space, wraps, blurbs, off the screen)
         continue-on-error: true
         run: node site/nav-lab/panels.mjs "$URL" .tmp/nav-panels "${{ inputs.prefix }}" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Disclosure behaviour
-        if: inputs.mode == 'full' (click, Escape, focus, hover timings, touch targets)
+      - name: Disclosure behaviour (click, Escape, focus, hover timings, touch targets)
+        if: inputs.mode == 'full'
         continue-on-error: true
         run: node site/nav-lab/behaviour.mjs "$URL" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Screenshots
