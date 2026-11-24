@@ -7,6 +7,14 @@ on:
       ref:
         description: The ouro-ui branch or commit to build.
         default: arimendelow-nav-redesign-mockups
+      mode:
+        description: "full: build, publish and check. panels: only photograph and check the panels already published."
+        default: full
+        type: choice
+        options: [full, panels]
+      prefix:
+        description: The name the panel photographs start with.
+        default: after
 permissions:
   contents: read
 concurrency:
@@ -17,6 +25,7 @@ env:
   URL: https://ourostack.github.io/ouro-ui-nav-lab/
 jobs:
   build:
+    if: inputs.mode == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -41,6 +50,7 @@ jobs:
         with:
           path: .tmp/nav-lab
   deploy:
+    if: inputs.mode == 'full'
     needs: build
     runs-on: ubuntu-24.04
     permissions:
@@ -53,6 +63,7 @@ jobs:
       - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
   shots:
     needs: deploy
+    if: always() && (needs.deploy.result == 'success' || inputs.mode == 'panels')
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -76,12 +87,18 @@ jobs:
             [ -n "$js" ] && curl -fsS -o /dev/null "$URL$js" && sleep 20 && break
             sleep 10
           done
-      - name: Disclosure behaviour (click, Escape, focus, hover timings, touch targets)
+      - name: Panels at every size from 320px to 4K (space, wraps, blurbs, off the screen)
+        continue-on-error: true
+        run: node site/nav-lab/panels.mjs "$URL" .tmp/nav-panels "${{ inputs.prefix }}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Disclosure behaviour
+        if: inputs.mode == 'full' (click, Escape, focus, hover timings, touch targets)
         continue-on-error: true
         run: node site/nav-lab/behaviour.mjs "$URL" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Screenshots
+        if: inputs.mode == 'full'
         run: node site/nav-lab/shots.mjs "$URL" .tmp/nav-shots
       - name: Ouro check, closed and open, phone, laptop and 4K, light and dark
+        if: inputs.mode == 'full'
         continue-on-error: true
         run: |
           targets=""
@@ -95,3 +112,4 @@ jobs:
           path: |
             .tmp/nav-shots
             .tmp/nav-check
+            .tmp/nav-panels
