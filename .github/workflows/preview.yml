@@ -1,0 +1,88 @@
+# Builds the nav lab from ourostack/ouro-ui's mockup branch and publishes it here, so the mockups load on a phone.
+# It never touches ui.ouroboros.bot. Then it screenshots each mockup and runs Ouro check on it, as artifacts.
+name: Preview
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The ouro-ui branch or commit to build.
+        default: arimendelow-nav-redesign-mockups
+permissions:
+  contents: read
+concurrency:
+  group: preview
+  cancel-in-progress: true
+env:
+  BASE: /ouro-ui-nav-lab/
+  URL: https://ourostack.github.io/ouro-ui-nav-lab/
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ourostack/ouro-ui
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The fonts and logo the lab shows
+        run: |
+          mkdir -p site/nav-lab/public/fonts site/nav-lab/public/brand
+          cp site/public/fonts/*.woff2 site/nav-lab/public/fonts/
+          cp site/public/brand/ouro-hx-render*.webp site/nav-lab/public/brand/
+      - run: NAV_LAB_BASE=$BASE pnpm exec vite build --config site/nav-lab/vite.config.ts
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .tmp/nav-lab
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ env.URL }}
+    steps:
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+  shots:
+    needs: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ourostack/ouro-ui
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Wait for Pages to serve this build
+        run: for i in $(seq 1 30); do curl -fsS "$URL" >/dev/null && break; sleep 10; done
+      - name: Screenshots
+        run: node site/nav-lab/shots.mjs "$URL" .tmp/nav-shots
+      - name: Ouro check, closed and open, phone, laptop and 4K, light and dark
+        continue-on-error: true
+        run: |
+          targets=""
+          for m in a b c d e; do targets="$targets ${URL}?m=$m#/apple/ax/ ${URL}?m=$m&open=1#/apple/ax/"; done
+          node registry/ouro/check/check.ts $targets --sizes 390x844,1440x900,3840x2160 --themes light,dark --out .tmp/nav-check --no-measured 2>&1 | tail -60
+          cat .tmp/nav-check/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: nav-lab-evidence
+          path: |
+            .tmp/nav-shots
+            .tmp/nav-check
