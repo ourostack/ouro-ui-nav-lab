@@ -69,7 +69,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Wait for Pages to serve this build
-        run: for i in $(seq 1 30); do curl -fsS "$URL" >/dev/null && break; sleep 10; done
+        run: |
+          # Until the page and the script it names both answer, so no check runs against a half-swapped deploy.
+          for i in $(seq 1 30); do
+            js=$(curl -fsS "$URL?nocache=$i" | grep -o 'assets/index-[^"]*\.js' | head -1)
+            [ -n "$js" ] && curl -fsS -o /dev/null "$URL$js" && sleep 20 && break
+            sleep 10
+          done
+      - name: Disclosure behaviour (click, Escape, focus, hover timings, touch targets)
+        continue-on-error: true
+        run: node site/nav-lab/behaviour.mjs "$URL" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Screenshots
         run: node site/nav-lab/shots.mjs "$URL" .tmp/nav-shots
       - name: Ouro check, closed and open, phone, laptop and 4K, light and dark
